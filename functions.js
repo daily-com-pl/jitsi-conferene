@@ -1,4 +1,5 @@
 let localTracks = [];
+const remoteTracks = {};
 let isJoined = false;
 
 /**
@@ -34,11 +35,11 @@ function onLocalTracks(tracks){
 
 		// *Setting for Video
 		if(localTracks[i].getType() === 'video'){
-            		$('body').append(`<video autoplay='1' id='localVideo${i}'/>`);
+            		$('body').append(`<video autoplay='1' local id='localVideo${i}'/>`);
 			localTracks[i].attach($((`#localVideo${i}`))[0]);
 		}
 		else{
-            		$('body').append(`<audio autoplay='1' muted='true' id='localAudio${i}'/>`);
+            		$('body').append(`<audio autoplay='1' local muted='true' id='localAudio${i}'/>`);
 			localTracks[i].attach($((`#localAudio${i}`))[0]);
 
 		}
@@ -60,7 +61,41 @@ function onDeviceListChanged(devices) {
  * @param track JitsiTrack Object
 */
 function onRemoteTrackAdd(track){
-	console.log(track);
+	console.log("Track :" +track);
+	//* if the Track is local we are not going to do anything. Localtracks will be handled by @onLocalTracks function.
+	if(track.isLocal()){
+		return;
+	}
+
+	//* if it's not a local Track then we will get the participantID
+	const participant = track.getParticipantId();
+
+	//* if the participant not in the @remoteTracks object key-value pairs, then we add it to the @remoteTracks object key-value pairs 
+	if(!remoteTracks[participant]){
+		remoteTracks[participant] = [];
+	}
+
+	const idx = remoteTracks[participant].push(track);
+
+	//* adding some event Listener on Remote @track
+	track.addEventListener(JitsiMeetJS.events.track.TRACK_AUDIO_LEVEL_CHANGED,audioLevel => console.log(`remote Audio Level : ${audioLevel}`));
+    	track.addEventListener(JitsiMeetJS.events.track.TRACK_MUTE_CHANGED,() => console.log('remote track muted'));
+   	track.addEventListener(JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,() => console.log('remote track stoped'));
+    	track.addEventListener(JitsiMeetJS.events.track.TRACK_AUDIO_OUTPUT_CHANGED,deviceId =>console.log(`remote track audio output device was changed to ${deviceId}`));
+    	
+	const id = participant + track.getType() + idx;
+	console.log("Participant id "+id);
+
+
+	if (track.getType() === 'video') {
+		$('body').append(`<video autoplay='1' remote id='${participant}video${idx}' />`);
+	} 
+	else {
+		$('body').append(`<audio autoplay='1' remote id='${participant}audio${idx}' />`);
+	}
+	
+	track.attach($(`#${id}`)[0]);
+
 }
 
 
@@ -75,18 +110,41 @@ function onConferenceJoined() {
     }
 }
 
-//* this variable is used in the onConnectionSucess function
+
+ /**
+ * This function gets called when a User Left a Conference 
+ * @param id
+ */
+function onUserLeft(id) {
+    console.log('user left');
+
+    if (!remoteTracks[id]) {
+        return;
+    }
+
+    const tracks = remoteTracks[id];
+
+    for (let i = 0; i < tracks.length; i++) {
+	console.log(`${id}${tracks[i].getType()}`);
+        tracks[i].detach($(`#${id}${tracks[i].getType()}`));
+    }
+}
+
+/**
+This variable is used in the onConnectionSucess function
+*/ 
 const confOptions = {
 };
 
-//* If Connection stablish is a success then this function is called
+/**
+ * If Connection stablish is a success then this function is called
+ */ 
 function onConnectionSuccess() {
 	console.log("Conecction Successfully CONNECTED");
 	//* After receiving the CONNECTION_ESTABLISHED event 
 	//* we need to create the JitsiConference object 
 	//* And we will attach listeners for conference events
-	//* In order to see all the Conference Events 
-	//* write > JitsiMeetJS.events.conference in the console.
+	//* In order to see all the Conference Events write > JitsiMeetJS.events.conference in the console.
     
 	room = connection.initJitsiConference('conference', confOptions);
 
@@ -94,5 +152,12 @@ function onConnectionSuccess() {
 	room.on(JitsiMeetJS.events.conference.TRACK_REMOVED, track => {console.log(`track removed!!!${track}`);});
 	
 	room.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED,onConferenceJoined);
+
+	room.on(JitsiMeetJS.events.conference.USER_JOINED, id => {
+		console.log(`user join -> ${id}`);
+		remoteTracks[id] = [];
+	});
+	
+	room.on(JitsiMeetJS.events.conference.USER_LEFT, onUserLeft);
 	room.join();
 }
