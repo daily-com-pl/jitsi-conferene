@@ -1,6 +1,7 @@
 let localTracks = [];
 const remoteTracks = {};
 let isJoined = false;
+let participantIds = new Set();
 
 /**
  * Handles all the Local (NOT REMOTE) Tracks
@@ -75,14 +76,13 @@ function onRemoteTrackAdd(track){
 		remoteTracks[participant] = [];
 	}
 
-	const idx = remoteTracks[participant].push(track);
-
 	//* adding some event Listener on Remote @track
 	track.addEventListener(JitsiMeetJS.events.track.TRACK_AUDIO_LEVEL_CHANGED,audioLevel => console.log(`remote Audio Level : ${audioLevel}`));
     	track.addEventListener(JitsiMeetJS.events.track.TRACK_MUTE_CHANGED,() => console.log('remote track muted'));
    	track.addEventListener(JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,() => console.log('remote track stoped'));
     	track.addEventListener(JitsiMeetJS.events.track.TRACK_AUDIO_OUTPUT_CHANGED,deviceId =>console.log(`remote track audio output device was changed to ${deviceId}`));
     	
+	const idx = remoteTracks[participant].push(track);
 	const id = participant + track.getType() + idx;
 	console.log("Participant id "+id);
 
@@ -111,29 +111,42 @@ function onConferenceJoined() {
 }
 
 
+/**
+* when a New User JOIN the Conference this Function gets Called
+*/
+function onUserJoined(id){
+	console.log(`new User JOINED :: ${id}`);
+	participantIds.add(id);
+	room.selectParticipants(Array.from(participantIds));
+}
+
+
  /**
  * This function gets called when a User Left a Conference 
  * @param id
  */
 function onUserLeft(id) {
-    console.log('user left');
+	console.log('user left');
+	
+	participantIds.delete(id);
+	room.selectParticipants(Array.from(participantIds));
 
-    if (!remoteTracks[id]) {
-        return;
-    }
-
-    const tracks = remoteTracks[id];
-
-    for (let i = 0; i < tracks.length; i++) {
-	console.log(`${id}${tracks[i].getType()}`);
-        tracks[i].detach($(`#${id}${tracks[i].getType()}`));
-    }
+	for (let i = 0; i < tracks.length; i++) {
+		console.log(`${id}${tracks[i].getType()}`);
+	        tracks[i].detach($(`#${id}${tracks[i].getType()}`));
+	}
 }
 
 /**
 This variable is used in the onConnectionSucess function
 */ 
 const confOptions = {
+	 conference: {
+            enableLayerSuspension: true,
+            p2p: {
+                enabled: false
+            }
+        }
 };
 
 /**
@@ -146,17 +159,14 @@ function onConnectionSuccess() {
 	//* And we will attach listeners for conference events
 	//* In order to see all the Conference Events write > JitsiMeetJS.events.conference in the console.
     
-	room = connection.initJitsiConference('conference', confOptions);
+	room = connection.initJitsiConference(roomName, confOptions.conference);
 
 	room.on(JitsiMeetJS.events.conference.TRACK_ADDED, onRemoteTrackAdd);
 	room.on(JitsiMeetJS.events.conference.TRACK_REMOVED, track => {console.log(`track removed!!!${track}`);});
 	
 	room.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED,onConferenceJoined);
 
-	room.on(JitsiMeetJS.events.conference.USER_JOINED, id => {
-		console.log(`user join -> ${id}`);
-		remoteTracks[id] = [];
-	});
+	room.on(JitsiMeetJS.events.conference.USER_JOINED, onUserJoined);
 	
 	room.on(JitsiMeetJS.events.conference.USER_LEFT, onUserLeft);
 	room.join();
